@@ -2,69 +2,67 @@ import streamlit as st
 from transformers import pipeline
 import re
 
+# ✅ MUST be the first Streamlit command
+st.set_page_config(page_title="AI Text Summarizer", layout="wide")
+
+# ✅ Load model (cached for performance)
 @st.cache_resource
 def load_model():
-    return pipeline("summarization", model="sshleifer/distilbart-cnn-12-6")
+    return pipeline(
+        "summarization",
+        model="sshleifer/distilbart-cnn-12-6"
+    )
 
 summarizer = load_model()
 
+# ✅ Clean input text
 def clean_text(text):
     text = re.sub(r"https?://\S+", "", text)
-    text = re.sub(r"[^\x20-\x7E\n]", "", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
-def to_bullets(summary, n=4):
-    sentences = re.split(r'(?<=[.!?]) +', summary)
-    bullets = []
-    for s in sentences:
-        if len(s.split()) > 6:
-            bullets.append(s.strip())
-    return bullets[:n]
-
-def chunked_summarize(text, max_len, min_len):
-    words = text.split()
-    chunks = [" ".join(words[i:i+400]) for i in range(0, len(words), 400)]
+# ✅ Summarization function (with chunking for better results)
+def summarize_text(text):
+    paragraphs = text.split("\n")
     summaries = []
-    for chunk in chunks:
-        result = summarizer(chunk, max_length=max_len, min_length=min_len, do_sample=False)
-        summaries.append(result[0]["summary_text"])
-    combined = " ".join(summaries)
-    final = summarizer(combined, max_length=max_len, min_length=min_len, do_sample=False)
-    return final[0]["summary_text"]
 
-def generate_title(text):
-    result = summarizer(text[:300], max_length=20, min_length=5, do_sample=False)
-    return result[0]["summary_text"]
+    for p in paragraphs:
+        if len(p.strip()) > 30:
+            result = summarizer(
+                p,
+                max_length=100,
+                min_length=30,
+                do_sample=False
+            )
+            summaries.append(result[0]['summary_text'])
 
-st.set_page_config(page_title="AI Text Summarizer", layout="wide")
+    return " ".join(summaries)
+
+# ✅ UI
 st.title("🧠 AI Text Summarizer")
 
-text_input = st.text_area("Paste your text here:", height=250)
+input_text = st.text_area("Paste your text here:", height=250)
 
-mode = st.selectbox("Summary Length", ["Short", "Balanced", "Detailed"])
-bullet_mode = st.checkbox("Show as bullet points", value=True)
+summary_length = st.selectbox(
+    "Summary Length",
+    ["Short", "Balanced", "Detailed"]
+)
 
 if st.button("Summarize"):
-    if not text_input.strip():
-        st.warning("Please enter some text.")
+    if input_text.strip() == "":
+        st.warning("Please enter some text!")
     else:
-        cleaned = clean_text(text_input)
+        cleaned = clean_text(input_text)
 
-        if mode == "Short":
+        # Adjust summary length
+        if summary_length == "Short":
+            max_len, min_len = 60, 20
+        elif summary_length == "Detailed":
+            max_len, min_len = 150, 50
+        else:
             max_len, min_len = 100, 30
-        elif mode == "Detailed":
-            max_len, min_len = 300, 120
-        else:
-            max_len, min_len = 180, 60
 
-        summary = chunked_summarize(cleaned, max_len, min_len)
-        title = generate_title(cleaned)
+        summary = summarize_text(cleaned)
 
-        st.subheader(title)
-
-        if bullet_mode:
-            for i, b in enumerate(to_bullets(summary), 1):
-                st.write(f"{i}. {b}")
-        else:
-            st.write(summary)
+        st.subheader("Summary")
+        st.write(summary)
