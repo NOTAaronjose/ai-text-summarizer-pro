@@ -13,7 +13,7 @@ Features
 ⬇️ Download Summary – Save summaries as .txt.
 Demo
 
-Live App: AI Text Summarizer
+Live App: [AI Text Summarizer](https://ai-text-summarizer-pro-dyxyaxrqo83yfgbr5vrdfa.streamlit.app/)
 
 Installation
 
