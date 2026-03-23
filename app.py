@@ -293,22 +293,73 @@ def extract_text_from_file(uploaded_file):
         st.error(f"Unsupported file type: .{file_type}")
         return ""
 
-def summarize_text(text, length="Balanced"):
+CHUNK_TOKEN_LIMIT = 900
+
+def split_into_chunks(text):
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    chunks, current_chunk, current_len = [], [], 0
+    for sentence in sentences:
+        token_len = len(tokenizer.encode(sentence, add_special_tokens=False))
+        if current_len + token_len > CHUNK_TOKEN_LIMIT and current_chunk:
+            chunks.append(" ".join(current_chunk))
+            current_chunk, current_len = [sentence], token_len
+        else:
+            current_chunk.append(sentence)
+            current_len += token_len
+    if current_chunk:
+        chunks.append(" ".join(current_chunk))
+    return chunks
+
+def summarize_chunk(text, max_length, min_length):
+    inputs = tokenizer(text, return_tensors="pt", max_length=1024, truncation=True)
+    n_tokens = inputs["input_ids"].shape[1]
+    safe_min = min(min_length, max(1, n_tokens // 2))
+    summary_ids = model.generate(
+        inputs["input_ids"],
+        max_length=max_length,
+        min_length=safe_min,
+        num_beams=4,
+        early_stopping=True
+    )
+    return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+
+def summarize_text(text, length="Balanced", progress_callback=None):
     length_params = {
         "Short":    {"max_length": 60,  "min_length": 20},
         "Balanced": {"max_length": 120, "min_length": 40},
         "Detailed": {"max_length": 200, "min_length": 80},
     }
     params = length_params[length]
-    inputs = tokenizer(text, return_tensors="pt", max_length=1024, truncation=True)
-    summary_ids = model.generate(
-        inputs["input_ids"],
-        max_length=params["max_length"],
-        min_length=params["min_length"],
-        num_beams=4,
-        early_stopping=True
-    )
-    return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+    chunks = split_into_chunks(text)
+    total = len(chunks)
+
+    # Pass 1: summarize each chunk
+    chunk_summaries = []
+    for i, chunk in enumerate(chunks):
+        if progress_callback:
+            progress_callback(i, total, f"Summarizing chunk {i+1} of {total}...")
+        chunk_max = max(40, params["max_length"] // max(1, total // 3 + 1))
+        chunk_min = max(10, chunk_max // 3)
+        chunk_summaries.append(summarize_chunk(chunk, chunk_max, chunk_min))
+
+    combined = " ".join(chunk_summaries)
+
+    # Pass 2: compress if still too long
+    combined_tokens = len(tokenizer.encode(combined, add_special_tokens=False))
+    if combined_tokens > CHUNK_TOKEN_LIMIT:
+        if progress_callback:
+            progress_callback(total, total, "Running final compression pass...")
+        pass2 = [summarize_chunk(c, params["max_length"], params["min_length"] // 2)
+                 for c in split_into_chunks(combined)]
+        combined = " ".join(pass2)
+
+    # Pass 3: final polish
+    if progress_callback:
+        progress_callback(total, total, "Polishing final summary...")
+    if len(tokenizer.encode(combined, add_special_tokens=False)) > 50:
+        combined = summarize_chunk(combined, params["max_length"], params["min_length"])
+
+    return combined, total
 
 # ─── Hero ────────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -374,13 +425,36 @@ if st.button("Summarize  →"):
         st.warning("Please provide some text or upload a file first.")
     else:
         cleaned = clean_text(text_to_summarize)
-        with st.spinner("Summarizing your text…"):
-            summary = summarize_text(cleaned, length=summary_length)
+        word_count = len(cleaned.split())
+        chunks_preview = split_into_chunks(cleaned)
+        n_chunks = len(chunks_preview)
+
+        status_text = st.empty()
+        progress_bar = st.empty()
+
+        def update_progress(i, total, message):
+            pct = int((i / max(total, 1)) * 100)
+            status_text.markdown(
+                f"<div style='font-family:DM Mono,monospace;font-size:0.72rem;"
+                f"color:#6a6050;letter-spacing:0.1em;margin-bottom:0.4rem;'>{message}</div>",
+                unsafe_allow_html=True
+            )
+            progress_bar.progress(pct)
+
+        if n_chunks > 1:
+            st.info(f"📄  Long document detected — {word_count:,} words split into {n_chunks} chunks for full coverage.")
+
+        summary, total_chunks = summarize_text(cleaned, length=summary_length, progress_callback=update_progress)
+
+        status_text.empty()
+        progress_bar.empty()
+
+        chunk_note = f"{total_chunks} chunk{'s' if total_chunks != 1 else ''}" if total_chunks > 1 else "single pass"
 
         st.markdown("<div style='height:1rem'></div>", unsafe_allow_html=True)
         st.markdown(f"""
         <div class="summary-card">
-            <div class="summary-header">✦ Summary &nbsp;·&nbsp; {summary_length}</div>
+            <div class="summary-header">✦ Summary &nbsp;·&nbsp; {summary_length} &nbsp;·&nbsp; {chunk_note}</div>
             {summary}
         </div>
         """, unsafe_allow_html=True)
