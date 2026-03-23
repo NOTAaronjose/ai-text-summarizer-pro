@@ -1,19 +1,21 @@
 import streamlit as st
-from transformers import pipeline
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import re
 
-# ✅ MUST be first Streamlit command
+# ✅ MUST be the first Streamlit command
 st.set_page_config(page_title="AI Text Summarizer", layout="wide")
 
-# ✅ Load model (fixed pipeline)
+# ✅ Load model (NO pipeline = no KeyError)
 @st.cache_resource
 def load_model():
-    return pipeline(
-        task="text2text-generation",  # 🔥 FIXED (was "summarization")
-        model="sshleifer/distilbart-cnn-12-6"
-    )
+    model_name = "sshleifer/distilbart-cnn-12-6"
 
-summarizer = load_model()
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+
+    return tokenizer, model
+
+tokenizer, model = load_model()
 
 # ✅ Clean input text
 def clean_text(text):
@@ -21,22 +23,24 @@ def clean_text(text):
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
-# ✅ Summarization with chunking
+# ✅ Summarization function
 def summarize_text(text):
-    paragraphs = text.split("\n")
-    summaries = []
+    inputs = tokenizer(
+        text,
+        return_tensors="pt",
+        max_length=1024,
+        truncation=True
+    )
 
-    for p in paragraphs:
-        if len(p.strip()) > 30:
-            result = summarizer(
-                p,
-                max_length=100,
-                min_length=30,
-                do_sample=False
-            )
-            summaries.append(result[0]['generated_text'])  # 🔥 changed key
+    summary_ids = model.generate(
+        inputs["input_ids"],
+        max_length=120,
+        min_length=40,
+        num_beams=4,
+        early_stopping=True
+    )
 
-    return " ".join(summaries)
+    return tokenizer.decode(summary_ids[0], skip_special_tokens=True)
 
 # ✅ UI
 st.title("🧠 AI Text Summarizer")
@@ -54,7 +58,8 @@ if st.button("Summarize"):
     else:
         cleaned = clean_text(input_text)
 
-        summary = summarize_text(cleaned)
+        with st.spinner("Summarizing..."):
+            summary = summarize_text(cleaned)
 
         st.subheader("Summary")
         st.write(summary)
