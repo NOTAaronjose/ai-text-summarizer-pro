@@ -2,14 +2,14 @@ import streamlit as st
 from transformers import pipeline
 import re
 
-# ✅ MUST be the first Streamlit command
+# ✅ MUST be first Streamlit command
 st.set_page_config(page_title="AI Text Summarizer", layout="wide")
 
-# ✅ Load model (cached for performance)
+# ✅ Load model (fixed pipeline)
 @st.cache_resource
 def load_model():
     return pipeline(
-        "summarization",
+        task="text2text-generation",  # 🔥 FIXED (was "summarization")
         model="sshleifer/distilbart-cnn-12-6"
     )
 
@@ -21,7 +21,7 @@ def clean_text(text):
     text = re.sub(r"\s+", " ", text)
     return text.strip()
 
-# ✅ Summarization function (with chunking for better results)
+# ✅ Summarization with chunking
 def summarize_text(text):
     paragraphs = text.split("\n")
     summaries = []
@@ -34,7 +34,7 @@ def summarize_text(text):
                 min_length=30,
                 do_sample=False
             )
-            summaries.append(result[0]['summary_text'])
+            summaries.append(result[0]['generated_text'])  # 🔥 changed key
 
     return " ".join(summaries)
 
@@ -53,14 +53,6 @@ if st.button("Summarize"):
         st.warning("Please enter some text!")
     else:
         cleaned = clean_text(input_text)
-
-        # Adjust summary length
-        if summary_length == "Short":
-            max_len, min_len = 60, 20
-        elif summary_length == "Detailed":
-            max_len, min_len = 150, 50
-        else:
-            max_len, min_len = 100, 30
 
         summary = summarize_text(cleaned)
 
