@@ -3,6 +3,15 @@
 AI-Powered Text Summarization App built with Streamlit and HuggingFace Transformers.
 Paste text or upload a document (PDF, DOCX, TXT) and get a concise summary in seconds. Supports long documents with chunked summarization.
 
+## 🧪 Usage Examples & Demo
+
+- Summarize an academic article
+- Condense meeting transcripts
+- Extract key points from long reports
+
+### Demo Screenshot
+![App Demo](assets/Screenshot 2026-03-24 002522.png)
+
 Features
 ✍️ Paste Text – Enter any text to summarize instantly.
 📁 File Upload – Upload PDF, DOCX, TXT files.
