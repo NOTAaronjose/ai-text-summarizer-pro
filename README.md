@@ -25,7 +25,7 @@ Paste text or upload PDF/DOCX/TXT files and get a clear, concise summary — eve
 - Extract key points from long reports
 
 ### Demo Screenshot
-![App Demo](assets/demo.png)
+![App Demo](demo.png)
 
 ---
 
